@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -11,49 +10,85 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ Optional: use your own GitHub Personal Access Token (public_repo scope)
-const GITHUB_TOKEN = "ghp_your_personal_token_here"; // Replace this
+// Replace these with your GitHub OAuth app credentials:
+const CLIENT_ID = "enter your client id";
+const CLIENT_SECRET = "enter your client secret";
 
+// Store leaderboard data in memory
 let leaderboardData = [];
 
 /**
- * 🔹 Fetch total Hacktoberfest PRs for a GitHub user
+ * Step 1: Redirect to GitHub OAuth
  */
-async function getHacktoberPRCount(username) {
+app.get("/auth/github", (req, res) => {
+  const redirect_uri = "http://localhost:3000/auth/github/callback";
+  const authURL = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&scope=read:user&redirect_uri=${redirect_uri}`;
+  res.redirect(authURL);
+});
+
+/**
+ * Step 2: GitHub redirects back with a code
+ */
+app.get("/auth/github/callback", async (req, res) => {
+  const code = req.query.code;
+
+  try {
+    // Exchange code for access token
+    const tokenResponse = await axios.post(
+      "https://github.com/login/oauth/access_token",
+      {
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        code,
+      },
+      { headers: { Accept: "application/json" } }
+    );
+
+    const access_token = tokenResponse.data.access_token;
+
+    // Get user info
+    const userResponse = await axios.get("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    const username = userResponse.data.login;
+
+    // Fetch PR count for Hacktoberfest repos
+    const prCount = await getHacktoberPRCount(username, access_token);
+
+    // Add or update user in leaderboard
+    const existing = leaderboardData.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (existing) existing.prs = prCount;
+    else leaderboardData.push({ username, prs: prCount });
+
+    console.log(`✅ ${username} logged in with ${prCount} PRs`);
+
+    // Redirect to leaderboard
+    res.redirect(`/index.html?username=${username}`);
+  } catch (err) {
+    console.error("❌ OAuth error:", err.message);
+    res.status(500).send("Authentication failed");
+  }
+});
+
+/**
+ * Fetch PR count for repos tagged 'hacktoberfest'
+ */
+async function getHacktoberPRCount(username, token) {
   try {
     const q = `type:pr+author:${username}+topic:hacktoberfest`;
     const response = await axios.get(`https://api.github.com/search/issues?q=${q}`, {
-      headers: { Authorization: `token ${GITHUB_TOKEN}` },
+      headers: { Authorization: `token ${token}` },
     });
     return response.data.total_count || 0;
   } catch (err) {
-    console.error("❌ Error fetching Hacktober PRs:", err.response?.data || err.message);
+    console.error("❌ Error fetching PRs:", err.message);
     return 0;
   }
 }
 
 /**
- * 🔹 Register user (redirect from Hacktoberfest website)
- * Example redirect: /register?username=SoumyaSethi
- */
-app.get("/register", async (req, res) => {
-  const { username } = req.query;
-  if (!username) return res.status(400).json({ error: "Missing username" });
-
-  const prCount = await getHacktoberPRCount(username);
-
-  const existing = leaderboardData.find(u => u.username.toLowerCase() === username.toLowerCase());
-  if (existing) existing.prs = prCount;
-  else leaderboardData.push({ username, prs: prCount });
-
-  console.log(`✅ ${username}: ${prCount} PRs`);
-
-  // Redirect to leaderboard page
-  res.redirect(`/index.html?username=${username}`);
-});
-
-/**
- * 🔹 API endpoint to fetch sorted leaderboard
+ * Public leaderboard API
  */
 app.get("/api/leaderboard", (req, res) => {
   const sorted = leaderboardData.sort((a, b) => b.prs - a.prs);
@@ -61,5 +96,5 @@ app.get("/api/leaderboard", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
