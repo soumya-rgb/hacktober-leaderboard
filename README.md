@@ -7,4 +7,4 @@ To run the project locally, install Node.js and clone the repo and follow the gi
 3. npm install express axios cors,  installs the dependencies.
 4. Now run, node server.js.
 5. Open your browser and go to http://localhost:3000 .
-6. To test for user registration give http://localhost:3000/register?username=<enter your github username> . 
+6. To test for user registration give "http://localhost:3000/register?username=<enter_your_github_username>" . 
